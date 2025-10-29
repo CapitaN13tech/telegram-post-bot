@@ -11,4 +11,4 @@ services:
       pip install -U pip setuptools
       pip install -r requirements.txt
     startCommand: |
-      . venv/bin/activate && python main.py
+      . venv/bin/activate && python bot.py
