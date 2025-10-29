@@ -1,52 +1,48 @@
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from dotenv import load_dotenv
-import os
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.enums import ContentType
+from aiogram.filters import CommandStart
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
+import os
+from dotenv import load_dotenv
 
-# .env fayldan o‘qish
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-if not BOT_TOKEN or not CHANNEL_ID:
-    raise ValueError("❌ BOT_TOKEN yoki CHANNEL_ID .env faylda topilmadi!")
-
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-# Har bir foydalanuvchining yuborgan postini vaqtinchalik saqlaymiz
 user_posts = {}
 
-@dp.message_handler(commands=['start'])
-async def start(msg: types.Message):
+@dp.message(CommandStart())
+async def start(msg: Message):
     await msg.answer(
         "👋 Salom!\nMenga rasm, video yoki post yuboring.\n"
         "Men uni kanalga joylashdan oldin sizdan tasdiq so‘rayman."
     )
 
-@dp.message_handler(content_types=types.ContentType.ANY)
-async def handle_content(msg: types.Message):
+@dp.message(F.content_type.in_({ContentType.PHOTO, ContentType.VIDEO, ContentType.TEXT, ContentType.DOCUMENT}))
+async def handle_content(msg: Message):
     user_id = msg.from_user.id
     user_posts[user_id] = msg
 
-    kb = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ Kanalga joylash", callback_data="send"),
-        InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel")
-    )
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Kanalga joylash", callback_data="send")
+    kb.button(text="❌ Bekor qilish", callback_data="cancel")
 
-    await msg.reply("Postni kanalga joylamoqchimisiz?", reply_markup=kb)
+    await msg.reply("Postni kanalga joylamoqchimisiz?", reply_markup=kb.as_markup())
 
-@dp.callback_query_handler(lambda c: c.data in ["send", "cancel"])
-async def process_decision(call: types.CallbackQuery):
+@dp.callback_query(F.data.in_({"send", "cancel"}))
+async def process_decision(call: CallbackQuery):
     user_id = call.from_user.id
     decision = call.data
 
     if decision == "send":
-        if user_id in user_posts:
+        msg = user_posts.get(user_id)
+        if msg:
             try:
-                msg = user_posts[user_id]
                 await msg.copy_to(CHANNEL_ID)
                 await call.message.answer("✅ Post kanalga yuborildi!")
                 del user_posts[user_id]
@@ -56,11 +52,13 @@ async def process_decision(call: types.CallbackQuery):
             await call.message.answer("❗ Sizda yuboriladigan post topilmadi.")
     else:
         await call.message.answer("❌ Bekor qilindi.")
-        if user_id in user_posts:
-            del user_posts[user_id]
+        user_posts.pop(user_id, None)
 
     await call.answer()
 
-if __name__ == "__main__":
+async def main():
     print("🤖 Bot ishga tushdi...")
-    executor.start_polling(dp, skip_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
